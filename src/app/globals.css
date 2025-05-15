@@ -1,26 +1,131 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Color Variables - Maintained exactly */
+    --color-primary-50: 238 242 255;
+    --color-primary-100: 224 231 255;
+    --color-primary-200: 199 210 254;
+    --color-primary-300: 165 180 252;
+    --color-primary-400: 129 140 248;
+    --color-primary-500: 99 102 241;
+    --color-primary-600: 79 70 229;
+    --color-primary-700: 67 56 202;
+    --color-primary-800: 55 48 163;
+    --color-primary-900: 49 46 129;
+    --color-primary-950: 30 27 75;
+
+    --color-secondary-50: 245 243 255;
+    --color-secondary-100: 237 233 254;
+    --color-secondary-200: 221 214 254;
+    --color-secondary-300: 196 181 253;
+    --color-secondary-400: 167 139 250;
+    --color-secondary-500: 139 92 246;
+    --color-secondary-600: 124 58 237;
+    --color-secondary-700: 109 40 217;
+    --color-secondary-800: 91 33 182;
+    --color-secondary-900: 76 29 149;
+    --color-secondary-950: 46 16 101;
+
+    --color-dark: 18 18 18;
+    --color-light: 249 250 251;
+    --foreground-rgb: 255 255 255;
+    --background-start-rgb: 18 18 18;
+    --background-end-rgb: 0 0 0;
+  }
+
+  /* Base Styles - Only added font-smoothing */
+  body {
+    color: rgb(var(--foreground-rgb));
+    background: linear-gradient(
+      to bottom,
+      rgb(var(--background-start-rgb)),
+      rgb(var(--background-end-rgb))
+    );
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    @apply antialiased; /* Only added this line */
+  }
+
+  code, pre {
+    font-family: 'Roboto Mono', monospace;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Buttons - Added backdrop-blur for better contrast */
+  .btn-primary {
+    @apply px-6 py-3 rounded-full font-medium transition-all duration-300 shadow-lg
+           bg-[rgb(var(--color-primary-600))] hover:bg-[rgb(var(--color-primary-700))]
+           text-white hover:shadow-[0_8px_30px_rgba(99,102,241,0.3)]
+           focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-primary-500))]
+           focus:ring-offset-2 focus:ring-offset-[rgb(var(--color-dark))]
+           backdrop-blur-sm; /* Only added this */
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-full font-medium transition-all duration-300 shadow-lg
+           bg-[rgb(var(--color-secondary-600))] hover:bg-[rgb(var(--color-secondary-700))]
+           text-white hover:shadow-[0_8px_30px_rgba(139,92,246,0.3)]
+           focus:outline-none focus:ring-2 focus:ring-[rgb(var(--color-secondary-500))]
+           focus:ring-offset-2 focus:ring-offset-[rgb(var(--color-dark))]
+           backdrop-blur-sm; /* Only added this */
+  }
+
+  /* Cards - Enhanced border color */
+  .card {
+    @apply bg-[rgba(18,18,18,0.7)] backdrop-blur-lg border border-white/10 /* Changed border */
+           rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-shadow duration-300;
+  }
+
+  /* Inputs - Improved placeholder contrast */
+  .input {
+    @apply px-4 py-2 rounded-lg transition-all duration-300
+           bg-gray-800 border border-gray-700 
+           focus:ring-2 focus:ring-[rgb(var(--color-primary-500))]
+           focus:border-[rgb(var(--color-primary-500))] outline-none
+           text-white placeholder-gray-400/80; /* Added opacity */
+  }
+}
+
+@layer utilities {
+  /* Animations - Added one new utility */
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* New gradient text utility */
+  .text-gradient {
+    background-clip: text;
+    -webkit-background-clip: text;
+    @apply bg-gradient-to-r from-[rgb(var(--color-primary-500))] to-[rgb(var(--color-secondary-500))] text-transparent;
+  }
+
+  .gradient-bg {
+    background: linear-gradient(
+      135deg,
+      rgb(var(--background-start-rgb)) 0%,
+      rgb(var(--background-end-rgb)) 100%
+    );
+  }
+
+  .waveform {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--color-primary-500)) 0%,
+      rgba(25, 20, 20, 0) 100%
+    );
+    animation: waveform 1.5s infinite linear;
+  }
+
+  /* Keyframes - Maintained original */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  @keyframes waveform {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+  }
 }
