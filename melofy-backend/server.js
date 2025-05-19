@@ -1,4 +1,6 @@
 require('dotenv').config();
+require('./config/storage');
+const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -18,6 +20,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api', require('./routes'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
