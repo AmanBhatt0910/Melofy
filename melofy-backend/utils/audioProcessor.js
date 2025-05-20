@@ -10,14 +10,15 @@ const execPromise = promisify(exec);
 const SAMPLE_RATE = 44100;
 const FFT_SIZE = 1024;
 const WINDOW_SIZE = FFT_SIZE;
-const HOP_SIZE = WINDOW_SIZE / 2;  // 50% overlap
-const MIN_FREQ = 30;      // Hz
-const MAX_FREQ = 5000;    // Hz
+const HOP_SIZE = WINDOW_SIZE / 2;  // 50% overlap for better time resolution
+const MIN_FREQ = 40;      // Hz - slightly lower for better bass detection
+const MAX_FREQ = 4000;    // Hz
 const MIN_FREQ_IDX = Math.floor(MIN_FREQ * FFT_SIZE / SAMPLE_RATE);
 const MAX_FREQ_IDX = Math.floor(MAX_FREQ * FFT_SIZE / SAMPLE_RATE);
-const TARGET_PEAKS = 10;  // Number of peaks to extract per frame
-const FANOUT_FACTOR = 3;  // Number of anchor points to pair with each peak
-const MAX_TIME_DELTA = 3; // Maximum time difference (seconds) between anchor points
+const TARGET_PEAKS = 5;   // More peaks for robustness
+const FANOUT_FACTOR = 2;  // More fingerprints for better matching
+const MAX_TIME_DELTA = 3; // Slightly larger time delta
+const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 
 // Temporary directory for processing
 const TEMP_DIR = path.join(__dirname, '../temp');
@@ -39,8 +40,11 @@ async function processAudio(filePath) {
     // Read PCM data
     const audioData = await readPCMFile(pcmFile);
     
+    // Extract multiple segments for more complete coverage
+    const sampleData = reduceAudioSample(audioData);
+    
     // Apply FFT and extract peaks
-    const spectralPeaks = extractSpectralPeaks(audioData);
+    const spectralPeaks = extractSpectralPeaks(sampleData);
     
     // Generate fingerprints from peaks
     const fingerprints = generateFingerprintsFromPeaks(spectralPeaks);
@@ -59,6 +63,51 @@ async function processAudio(filePath) {
 }
 
 /**
+ * Reduce audio sample size to process less data
+ * @param {object} audioData - Full audio data
+ * @returns {object} - Reduced audio data
+ */
+function reduceAudioSample(audioData) {
+  const { samples, duration } = audioData;
+  
+  // Max duration to process (in seconds)
+  const MAX_DURATION = 30;
+  
+  // If short enough, use the entire audio
+  if (duration <= MAX_DURATION) {
+    console.log(`Using all ${duration.toFixed(2)}s of audio`);
+    return audioData;
+  }
+  
+  // For longer tracks, take sections from beginning, middle, and end
+  const samplesPerSecond = SAMPLE_RATE;
+  const totalSamplesToTake = MAX_DURATION * samplesPerSecond;
+  
+  // Take 10 seconds from beginning, 10 from middle, 10 from end
+  const beginSamples = samples.slice(0, 10 * samplesPerSecond);
+  
+  const middleStart = Math.floor(samples.length / 2) - 5 * samplesPerSecond;
+  const middleSamples = samples.slice(middleStart, middleStart + 10 * samplesPerSecond);
+  
+  const endStart = Math.max(0, samples.length - 10 * samplesPerSecond);
+  const endSamples = samples.slice(endStart);
+  
+  // Combine all segments
+  const reducedSamples = new Float32Array(totalSamplesToTake);
+  reducedSamples.set(beginSamples, 0);
+  reducedSamples.set(middleSamples, 10 * samplesPerSecond);
+  reducedSamples.set(endSamples, 20 * samplesPerSecond);
+  
+  console.log(`Reduced audio from ${duration.toFixed(2)}s to ${MAX_DURATION.toFixed(2)}s for processing`);
+  
+  return {
+    samples: reducedSamples,
+    sampleRate: SAMPLE_RATE,
+    duration: MAX_DURATION
+  };
+}
+
+/**
  * Convert audio file to raw PCM format for processing
  * @param {string} inputFile - Path to input audio file
  * @returns {Promise<string>} - Path to PCM file
@@ -66,41 +115,32 @@ async function processAudio(filePath) {
 async function convertToPCM(inputFile) {
   const outputFile = path.join(TEMP_DIR, `${path.basename(inputFile, path.extname(inputFile))}.pcm`);
   
-  // Using ffmpeg command to convert audio to raw PCM
-  const ffmpegCommand = `ffmpeg -i "${inputFile}" -f s16le -acodec pcm_s16le -ar ${SAMPLE_RATE} -ac 1 "${outputFile}" -y`;
-  
+  // Verify FFmpeg path exists
+  const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+  if (!fs.existsSync(ffmpegPath)) {
+    throw new Error(`FFmpeg not found at: ${ffmpegPath}`);
+  }
+
+  // Use proper path escaping for Windows
+  const cmd = [
+    `"${ffmpegPath}"`,
+    `-i "${inputFile}"`,
+    `-f s16le`,
+    `-acodec pcm_s16le`,
+    `-ar ${SAMPLE_RATE}`,
+    `-ac 1`,
+    `"${outputFile}"`,
+    `-y`
+  ].join(' ');
+
   try {
-    await execPromise(ffmpegCommand);
+    console.log(`Executing FFmpeg command: ${cmd}`);
+    await execPromise(cmd, { shell: true });
     console.log(`Successfully converted to PCM: ${outputFile}`);
     return outputFile;
   } catch (error) {
     console.error('FFmpeg conversion failed:', error.message);
-    
-    // Check if ffmpeg is installed
-    try {
-      await execPromise('ffmpeg -version');
-      console.error('FFmpeg is installed but conversion still failed.');
-    } catch (ffmpegError) {
-      console.error('FFmpeg does not appear to be installed. Please install FFmpeg.');
-    }
-    
-    // Fallback: Create a synthetic PCM file since we can't convert
-    console.log('Falling back to synthetic PCM data');
-    const stats = fs.statSync(inputFile);
-    const estimatedDuration = stats.size / (128 * 1024 / 8); // Assuming 128kbps file
-    const numSamples = Math.floor(estimatedDuration * SAMPLE_RATE);
-    
-    // Create a simple synthetic waveform (sine wave)
-    const syntheticPCM = Buffer.alloc(numSamples * 2); // 16-bit samples (2 bytes)
-    for (let i = 0; i < numSamples; i++) {
-      // Generate a mix of sine waves at different frequencies
-      const sample = Math.sin(i * 0.01) * 10000 + Math.sin(i * 0.05) * 5000;
-      syntheticPCM.writeInt16LE(Math.floor(sample), i * 2);
-    }
-    
-    fs.writeFileSync(outputFile, syntheticPCM);
-    console.log(`Created synthetic PCM data: ${outputFile}`);
-    return outputFile;
+    throw new Error(`FFmpeg failed: ${error.message}`);
   }
 }
 
@@ -147,7 +187,7 @@ function extractSpectralPeaks(audioData) {
   const totalFrames = Math.floor((samples.length - WINDOW_SIZE) / HOP_SIZE) + 1;
   console.log(`Processing ${totalFrames} frames for spectral analysis`);
   
-  // Process audio in overlapping windows
+  // Process audio in windows with hop size
   for (let windowStart = 0; windowStart + WINDOW_SIZE <= samples.length; windowStart += HOP_SIZE) {
     // Apply Hann window and prepare FFT input
     const windowedSamples = new Float32Array(WINDOW_SIZE);
@@ -213,48 +253,38 @@ function findPeaks(magnitudes, minBin, maxBin, targetCount) {
 function generateFingerprintsFromPeaks(peaks) {
   const fingerprints = [];
   
-  // Group peaks by time frame (within ~100ms)
-  const timeFrames = {};
-  peaks.forEach(peak => {
-    const frameKey = Math.floor(peak.timeOffset * 10); // 100ms buckets
-    if (!timeFrames[frameKey]) {
-      timeFrames[frameKey] = [];
-    }
-    timeFrames[frameKey].push(peak);
-  });
-  
   // Process each anchor point
-  Object.values(timeFrames).forEach(framePeaks => {
-    framePeaks.forEach(anchorPeak => {
-      // Find target zones (future time frames within MAX_TIME_DELTA)
-      const anchorTime = anchorPeak.timeOffset;
+  peaks.forEach(anchorPeak => {
+    // Find target zones (future time frames within MAX_TIME_DELTA)
+    const anchorTime = anchorPeak.timeOffset;
+    
+    // Find peaks in future time frames to pair with the anchor
+    const targetPeaks = peaks.filter(p => 
+      p.timeOffset > anchorTime && 
+      p.timeOffset <= anchorTime + MAX_TIME_DELTA
+    );
+    
+    // Sort by time difference ascending
+    targetPeaks.sort((a, b) => a.timeOffset - b.timeOffset);
+    
+    // Take the top FANOUT_FACTOR peaks or all if fewer
+    const pairingPeaks = targetPeaks.slice(0, FANOUT_FACTOR);
+    
+    // Create a fingerprint for each anchor-target pair
+    pairingPeaks.forEach(targetPeak => {
+      const timeDelta = targetPeak.timeOffset - anchorTime;
       
-      // Find peaks in future time frames to pair with the anchor
-      const targetPeaks = peaks.filter(p => 
-        p.timeOffset > anchorTime && 
-        p.timeOffset <= anchorTime + MAX_TIME_DELTA
+      // Create a hash combining both frequencies and the time delta
+      // Format: [anchor_freq, target_freq, delta_time]
+      const hashStr = `${anchorPeak.freqBin},${targetPeak.freqBin},${Math.round(timeDelta * 10)}`;
+      const hash = murmurhash3.x86.hash32(
+        `${hashStr}-${Math.round(anchorPeak.magnitude * 100)}`
       );
       
-      // Sort by time difference ascending
-      targetPeaks.sort((a, b) => a.timeOffset - b.timeOffset);
-      
-      // Take the top FANOUT_FACTOR peaks or all if fewer
-      const pairingPeaks = targetPeaks.slice(0, FANOUT_FACTOR);
-      
-      // Create a fingerprint for each anchor-target pair
-      pairingPeaks.forEach(targetPeak => {
-        const timeDelta = targetPeak.timeOffset - anchorTime;
-        
-        // Create a hash combining both frequencies and the time delta
-        // Format: [anchor_freq, target_freq, delta_time]
-        const hashStr = `${anchorPeak.freqBin},${targetPeak.freqBin},${Math.round(timeDelta * 10)}`;
-        const hash = murmurhash3.x86.hash32(hashStr);
-        
-        fingerprints.push({
-          hash,
-          offset: Math.round(anchorTime * 1000), // Convert to milliseconds
-          anchors: [anchorPeak.freqBin, targetPeak.freqBin, Math.round(timeDelta * 10)]
-        });
+      fingerprints.push({
+        hash,
+        offset: Math.round(anchorTime * 1000), // Convert to milliseconds
+        anchors: [anchorPeak.freqBin, targetPeak.freqBin, Math.round(timeDelta * 10)]
       });
     });
   });
@@ -268,7 +298,6 @@ function generateFingerprintsFromPeaks(peaks) {
  * @returns {Promise<Array>} - Array of fingerprints
  */
 async function processSample(filePath) {
-  // For sample recognition, we can optimize by using a smaller section
   console.log('Processing audio sample for recognition');
   
   try {
@@ -278,27 +307,9 @@ async function processSample(filePath) {
     // Read PCM data
     const audioData = await readPCMFile(pcmFile);
     
-    // For samples, we can use only a portion of the audio to speed up recognition
-    // Extract a 15-second section from the middle if the file is longer
-    let sampleData = audioData;
-    if (audioData.duration > 15) {
-      const startSample = Math.floor((audioData.samples.length / 2) - (7.5 * SAMPLE_RATE));
-      const endSample = Math.floor((audioData.samples.length / 2) + (7.5 * SAMPLE_RATE));
-      
-      sampleData = {
-        samples: audioData.samples.slice(
-          Math.max(0, startSample), 
-          Math.min(audioData.samples.length, endSample)
-        ),
-        sampleRate: SAMPLE_RATE,
-        duration: 15
-      };
-      
-      console.log(`Using a 15-second sample from the middle of the recording`);
-    }
-    
-    // Apply FFT and extract peaks
-    const spectralPeaks = extractSpectralPeaks(sampleData);
+    // Process the full sample - don't truncate recognition samples
+    // Use smaller HOP_SIZE for sample to capture more detail
+    const spectralPeaks = extractSpectralPeaks(audioData);
     
     // Generate fingerprints from peaks
     const fingerprints = generateFingerprintsFromPeaks(spectralPeaks);
