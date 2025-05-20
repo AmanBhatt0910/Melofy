@@ -35,7 +35,7 @@ const upload = multer({
     
     cb(new Error(`Unsupported file type. Please upload one of these formats: ${allowedExtensions.join(', ')}`));
   },
-  limits: { 
+  limits: {
     fileSize: 25 * 1024 * 1024, // 25MB
     files: 1
   }
@@ -55,9 +55,9 @@ router.post('/recognize', upload.single('audio'), songController.recognizeSong);
 
 // Test Route
 router.post('/test-upload', upload.single('audio'), (req, res) => {
-  res.json({ 
+  res.json({
     message: 'File uploaded successfully for testing',
-    file: req.file 
+    file: req.file
   });
 });
 

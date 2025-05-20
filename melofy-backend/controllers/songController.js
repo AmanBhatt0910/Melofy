@@ -14,23 +14,32 @@ module.exports = {
         return res.status(400).json({ error: 'Audio file is required' });
       }
 
+      // Process the audio file to generate fingerprints
+      console.log(`Processing audio file: ${audioFile.filename}`);
       const fingerprints = await audioProcessor.processAudio(audioFile.path);
+      console.log(`Generated ${fingerprints.length} fingerprints`);
+
+      // Create the song document
       const song = new Song({
-        title,
-        artist,
-        album,
-        duration,
+        title: title || 'Unknown Title',
+        artist: artist || 'Unknown Artist',
+        album: album || '',
+        duration: duration || 0,
         filePath: audioFile.path,
         fingerprints
       });
 
+      // Save to database
       await song.save();
       res.status(201).json({
         message: 'Song added successfully',
         songId: song._id,
-        fingerprintCount: fingerprints.length
+        fingerprintCount: fingerprints.length,
+        title: song.title,
+        artist: song.artist
       });
     } catch (error) {
+      console.error('Error adding song:', error);
       res.status(500).json({ error: error.message });
     }
   },
@@ -38,8 +47,14 @@ module.exports = {
   // List all songs
   async listSongs(req, res) {
     try {
-      const songs = await Song.find({}, 'title artist album duration');
-      res.json(songs);
+      const songs = await Song.find({});
+      const songsWithFingerprintCount = songs.map(song => {
+        const songObj = song.toObject();
+        songObj.fingerprintCount = song.fingerprints ? song.fingerprints.length : 0;
+        delete songObj.fingerprints; // Remove the full fingerprint array to keep response size smaller
+        return songObj;
+      });
+      res.json(songsWithFingerprintCount);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -52,7 +67,13 @@ module.exports = {
       if (!song) {
         return res.status(404).json({ error: 'Song not found' });
       }
-      res.json(song);
+      
+      // Don't send all fingerprints in the response to keep it lightweight
+      const songResponse = song.toObject();
+      songResponse.fingerprintCount = song.fingerprints.length;
+      songResponse.fingerprints = song.fingerprints.slice(0, 5); // Just send the first 5 as sample
+      
+      res.json(songResponse);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -86,7 +107,7 @@ module.exports = {
       }
       res.json({
         count: song.fingerprints.length,
-        sample: song.fingerprints.slice(0, 5)
+        sample: song.fingerprints.slice(0, 10)
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -101,32 +122,87 @@ module.exports = {
         return res.status(400).json({ error: 'Audio sample is required' });
       }
 
-      const fingerprints = await audioProcessor.processAudio(audioFile.path);
-      const matches = await Song.aggregate([
-        { $unwind: '$fingerprints' },
-        { $match: { 'fingerprints.hash': { $in: fingerprints.map(f => f.hash) } } },
-        { $group: {
-          _id: '$_id',
-          title: { $first: '$title' },
-          artist: { $first: '$artist' },
-          matchCount: { $sum: 1 }
-        }},
-        { $sort: { matchCount: -1 } },
-        { $limit: 5 }
-      ]);
+      // Process the sample to extract fingerprints
+      const sampleFingerprints = await audioProcessor.processSample(audioFile.path);
+      
+      if (sampleFingerprints.length === 0) {
+        return res.status(400).json({ error: 'Could not extract fingerprints from sample' });
+      }
+      
+      // Extract hashes for matching
+      const sampleHashes = sampleFingerprints.map(f => f.hash);
 
-      if (matches.length > 0 && matches[0].matchCount > 10) {
+      // Find songs with matching fingerprints
+      const songs = await Song.find({
+        'fingerprints.hash': { $in: sampleHashes }
+      });
+
+      if (songs.length === 0) {
+        // Clean up the sample file
+        if (fs.existsSync(audioFile.path)) {
+          fs.unlinkSync(audioFile.path);
+        }
+        
+        return res.json({
+          success: false,
+          message: 'No matching songs found in the database'
+        });
+      }
+
+      // Process match details
+      const matches = await Promise.all(songs.map(async (song) => {
+        // Count matching fingerprints
+        const matchingFingerprints = song.fingerprints.filter(
+          fp => sampleHashes.includes(fp.hash)
+        );
+        
+        // Calculate match quality
+        const matchCount = matchingFingerprints.length;
+        const matchQuality = (matchCount / sampleHashes.length) * 100;
+        
+        return {
+          _id: song._id,
+          title: song.title,
+          artist: song.artist,
+          album: song.album,
+          matchCount,
+          matchQuality
+        };
+      }));
+      
+      // Sort by match quality
+      matches.sort((a, b) => b.matchQuality - a.matchQuality);
+      
+      // Clean up the sample file
+      if (fs.existsSync(audioFile.path)) {
+        fs.unlinkSync(audioFile.path);
+      }
+
+      // Determine if we have a strong enough match (5% threshold)
+      if (matches.length > 0 && matches[0].matchQuality > 5) {
         res.json({
           success: true,
-          match: matches[0]
+          match: {
+            title: matches[0].title,
+            artist: matches[0].artist,
+            album: matches[0].album,
+            confidence: `${Math.round(matches[0].matchQuality)}%`,
+            matchCount: matches[0].matchCount
+          }
         });
       } else {
         res.json({
           success: false,
-          message: 'No matching song found'
+          message: 'No confident match found',
+          possibleMatches: matches.slice(0, 5).map(m => ({
+            title: m.title,
+            artist: m.artist,
+            confidence: `${Math.round(m.matchQuality)}%`
+          }))
         });
       }
     } catch (error) {
+      console.error('Recognition error:', error);
       res.status(500).json({ error: error.message });
     }
   }
