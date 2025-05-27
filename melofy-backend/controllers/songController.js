@@ -667,20 +667,30 @@ async function deleteSong(req, res) {
     if (!song) {
       return res.status(404).json({ error: 'Song not found' });
     }
-    
+
     // Delete the associated audio file
-    const filePath = path.join(__dirname, '../uploads', song.filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    const filename = path.basename(song.filename); // Prevent directory traversal
+    const filePath = path.join(__dirname, '../uploads', filename);
+
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (err) {
+      // Ignore "file not found" errors, throw others
+      if (err.code !== 'ENOENT') {
+        throw err;
+      }
     }
-    
-    // Delete from database
-    await song.remove();
-    
+
+    // Delete from database using modern method
+    await Song.deleteOne({ _id: song._id });
+
     return res.json({ message: 'Song deleted successfully' });
   } catch (error) {
     console.error('Error in deleteSong:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ 
+      error: error.message,
+      details: 'Failed to delete song. Please try again.'
+    });
   }
 }
 
