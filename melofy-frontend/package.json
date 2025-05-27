@@ -15,6 +15,7 @@
     "@react-three/fiber": "^9.1.2",
     "axios": "^1.9.0",
     "framer-motion": "^12.11.4",
+    "lucide-react": "^0.511.0",
     "maath": "^0.10.8",
     "next": "15.3.2",
     "postcss": "^8.5.3",
