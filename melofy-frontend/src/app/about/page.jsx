@@ -174,40 +174,6 @@ export default function AboutPage() {
 
   return (
     <main className="flex flex-col min-h-screen relative">
-      {/* Sticky Navigation */}
-      <div className="sticky top-0 z-10 backdrop-blur-lg bg-dark/80 border-b border-gray-800">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-8">
-            <h1 className="text-xl font-bold bg-gradient-to-r from-[rgb(var(--color-primary-400))] to-[rgb(var(--color-secondary-500))] bg-clip-text text-transparent">
-              Melofy
-            </h1>
-            <nav className="hidden md:flex">
-              <ul className="flex gap-6">
-                <li>
-                  <button 
-                    onClick={() => scrollToSection('technology')}
-                    className={`text-sm font-medium transition-colors ${activeTab === 'technology' ? 'text-[rgb(var(--color-primary-400))]' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Technology
-                  </button>
-                </li>
-                <li>
-                  <button 
-                    onClick={() => scrollToSection('team')}
-                    className={`text-sm font-medium transition-colors ${activeTab === 'team' ? 'text-[rgb(var(--color-primary-400))]' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Our Team
-                  </button>
-                </li>
-              </ul>
-            </nav>
-          </div>
-          <button className="py-2 px-4 rounded-full text-sm font-medium bg-[rgb(var(--color-primary-500))] hover:bg-[rgb(var(--color-primary-600))] text-white transition-colors">
-            Try Melofy
-          </button>
-        </div>
-      </div>
-      
       <div className="flex-grow">
         {/* Hero Section */}
         <motion.section 

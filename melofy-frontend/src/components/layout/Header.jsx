@@ -35,9 +35,11 @@ export default function Header() {
               </div>
               <div className="absolute inset-0 rounded-xl bg-white/5 backdrop-blur-sm" />
             </div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-purple-200 to-blue-200 bg-clip-text text-transparent">
-              Melofy
-            </span>
+            <Link href={'/'}>
+              <span className="text-2xl font-bold bg-gradient-to-r from-purple-200 to-blue-200 bg-clip-text text-transparent">
+                Melofy
+              </span>
+            </Link>
           </motion.div>
 
           {/* Rest of the component remains the same */}
