@@ -7,19 +7,21 @@ const { exec } = require('child_process');
 const execPromise = promisify(exec);
 const Song = require('../models/Song');
 
-// Constants for audio processing
 const SAMPLE_RATE = 44100;
 const FFT_SIZE = 1024;
 const WINDOW_SIZE = FFT_SIZE;
-const HOP_SIZE = WINDOW_SIZE / 2;  // 50% overlap for better time resolution
-const MIN_FREQ = 40;      // Hz - slightly lower for better bass detection
-const MAX_FREQ = 4000;    // Hz
+const HOP_SIZE = WINDOW_SIZE / 4;  // Increased overlap for finer time resolution
+const HOP_SIZE_RECOGNITION = WINDOW_SIZE / 8; // Even finer resolution for recognition
+const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+const MIN_FREQ = 300;      // Higher minimum to avoid bass noise
+const MAX_FREQ = 2000;     // Lower maximum to focus on vocal/melodic range
 const MIN_FREQ_IDX = Math.floor(MIN_FREQ * FFT_SIZE / SAMPLE_RATE);
 const MAX_FREQ_IDX = Math.floor(MAX_FREQ * FFT_SIZE / SAMPLE_RATE);
-const TARGET_PEAKS = 5;   // More peaks for robustness
-const FANOUT_FACTOR = 2;  // More fingerprints for better matching
-const MAX_TIME_DELTA = 3; // Slightly larger time delta
-const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
+const TARGET_PEAKS = 3;    // Fewer, more distinctive peaks
+const FANOUT_FACTOR = 3;   // More fingerprints per anchor
+const MIN_TIME_DELTA = 0.05; // Minimum time between anchor and target (50ms)
+const MAX_TIME_DELTA = 2.0;  // Maximum time between anchor and target (2s)
+const PEAK_SORT_SIZE = 10;   // Consider top 10 peaks per frame
 
 // Temporary directory for processing
 const TEMP_DIR = path.join(__dirname, '../temp');
@@ -175,47 +177,94 @@ async function readPCMFile(pcmFile) {
  * @param {object} audioData - Audio data object with samples
  * @returns {Array} - Array of spectral peaks
  */
-function extractSpectralPeaks(audioData) {
+function extractSpectralPeaks(audioData, hopSize = HOP_SIZE) {
   const { samples, duration } = audioData;
   
-  // Prepare Hann window function for better FFT results
+  // Improved Hann window function
   const hannWindow = new Float32Array(WINDOW_SIZE);
   for (let i = 0; i < WINDOW_SIZE; i++) {
     hannWindow[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (WINDOW_SIZE - 1)));
   }
   
   const peaks = [];
-  const totalFrames = Math.floor((samples.length - WINDOW_SIZE) / HOP_SIZE) + 1;
+  const totalFrames = Math.floor((samples.length - WINDOW_SIZE) / hopSize) + 1;
   console.log(`Processing ${totalFrames} frames for spectral analysis`);
   
-  // Process audio in windows with hop size
-  for (let windowStart = 0; windowStart + WINDOW_SIZE <= samples.length; windowStart += HOP_SIZE) {
-    // Apply Hann window and prepare FFT input
+  for (let windowStart = 0; windowStart + WINDOW_SIZE <= samples.length; windowStart += hopSize) {
+    // Apply window and prepare FFT input
     const windowedSamples = new Float32Array(WINDOW_SIZE);
     for (let i = 0; i < WINDOW_SIZE; i++) {
       windowedSamples[i] = samples[windowStart + i] * hannWindow[i];
     }
     
-    // Run FFT using fourier-transform library
+    // Run FFT
     const magnitudes = fourierTransform(windowedSamples);
     
-    // Find peaks in the spectrum (focus on relevant frequency range)
+    // Improved peak finding with local maxima and magnitude threshold
     const timeOffset = windowStart / SAMPLE_RATE;
-    const framePeaks = findPeaks(magnitudes, MIN_FREQ_IDX, MAX_FREQ_IDX, TARGET_PEAKS);
+    const framePeaks = findImprovedPeaks(magnitudes, MIN_FREQ_IDX, MAX_FREQ_IDX, TARGET_PEAKS);
     
-    // Add peaks to overall collection
+    // Add peaks with additional metadata
     framePeaks.forEach(peak => {
       peaks.push({
-        freqBin: peak,
-        frequency: peak * SAMPLE_RATE / FFT_SIZE,
-        magnitude: magnitudes[peak],
-        timeOffset
+        freqBin: peak.bin,
+        frequency: peak.bin * SAMPLE_RATE / FFT_SIZE,
+        magnitude: peak.magnitude,
+        timeOffset: Math.round(timeOffset * 1000) / 1000, // Round to ms precision
+        frame: Math.floor(windowStart / hopSize)
       });
     });
   }
   
   console.log(`Extracted ${peaks.length} spectral peaks`);
   return peaks;
+}
+
+function findImprovedPeaks(magnitudes, minBin, maxBin, targetCount) {
+  const candidates = [];
+  
+  // Find local maxima with minimum separation
+  const MIN_PEAK_SEPARATION = 3; // Minimum bins between peaks
+  
+  for (let i = minBin + 2; i < maxBin - 2; i++) {
+    // Check if this is a local maximum (compare with 2 neighbors on each side)
+    if (magnitudes[i] > magnitudes[i-1] && magnitudes[i] > magnitudes[i+1] &&
+        magnitudes[i] > magnitudes[i-2] && magnitudes[i] > magnitudes[i+2]) {
+      
+      // Calculate peak strength (magnitude relative to local average)
+      const localAvg = (magnitudes[i-2] + magnitudes[i-1] + magnitudes[i+1] + magnitudes[i+2]) / 4;
+      const peakStrength = magnitudes[i] / (localAvg + 1e-10); // Avoid division by zero
+      
+      candidates.push({
+        bin: i,
+        magnitude: magnitudes[i],
+        strength: peakStrength
+      });
+    }
+  }
+  
+  // Sort by peak strength first, then by magnitude
+  candidates.sort((a, b) => {
+    const strengthDiff = b.strength - a.strength;
+    return strengthDiff !== 0 ? strengthDiff : b.magnitude - a.magnitude;
+  });
+  
+  // Select peaks with minimum separation
+  const selectedPeaks = [];
+  for (const candidate of candidates) {
+    if (selectedPeaks.length >= targetCount) break;
+    
+    // Check if this peak is far enough from already selected peaks
+    const tooClose = selectedPeaks.some(peak => 
+      Math.abs(peak.bin - candidate.bin) < MIN_PEAK_SEPARATION
+    );
+    
+    if (!tooClose) {
+      selectedPeaks.push(candidate);
+    }
+  }
+  
+  return selectedPeaks;
 }
 
 /**
@@ -253,44 +302,78 @@ function findPeaks(magnitudes, minBin, maxBin, targetCount) {
  */
 function generateFingerprintsFromPeaks(peaks) {
   const fingerprints = [];
+  const TIME_QUANTIZATION = 0.1; // 100ms time bins for better alignment
   
-  // Process each anchor point
-  peaks.forEach(anchorPeak => {
-    // Find target zones (future time frames within MAX_TIME_DELTA)
+  // Sort peaks by time for efficient processing
+  peaks.sort((a, b) => a.timeOffset - b.timeOffset);
+  
+  // Process each peak as an anchor
+  for (let i = 0; i < peaks.length; i++) {
+    const anchorPeak = peaks[i];
     const anchorTime = anchorPeak.timeOffset;
     
-    // Find peaks in future time frames to pair with the anchor
-    const targetPeaks = peaks.filter(p => 
-      p.timeOffset > anchorTime && 
-      p.timeOffset <= anchorTime + MAX_TIME_DELTA
-    );
+    // Find target peaks within time window
+    const targetPeaks = [];
     
-    // Sort by time difference ascending
-    targetPeaks.sort((a, b) => a.timeOffset - b.timeOffset);
-    
-    // Take the top FANOUT_FACTOR peaks or all if fewer
-    const pairingPeaks = targetPeaks.slice(0, FANOUT_FACTOR);
-    
-    // Create a fingerprint for each anchor-target pair
-    pairingPeaks.forEach(targetPeak => {
+    for (let j = i + 1; j < peaks.length; j++) {
+      const targetPeak = peaks[j];
       const timeDelta = targetPeak.timeOffset - anchorTime;
       
-      // Create a hash combining both frequencies and the time delta
-      // Format: [anchor_freq, target_freq, delta_time]
-      const hashStr = `${anchorPeak.freqBin},${targetPeak.freqBin},${Math.round(timeDelta * 10)}`;
-      const hash = murmurhash3.x86.hash32(
-        `${hashStr}-${Math.round(anchorPeak.magnitude * 100)}`
-      );
+      if (timeDelta > MAX_TIME_DELTA) break; // Peaks are sorted by time
+      if (timeDelta < MIN_TIME_DELTA) continue;
+      
+      targetPeaks.push({
+        peak: targetPeak,
+        timeDelta: timeDelta
+      });
+    }
+    
+    // Sort targets by time delta and take the best ones
+    targetPeaks.sort((a, b) => a.timeDelta - b.timeDelta);
+    const selectedTargets = targetPeaks.slice(0, FANOUT_FACTOR);
+    
+    // Create fingerprints for each anchor-target pair
+    selectedTargets.forEach(target => {
+      const freq1 = anchorPeak.freqBin;
+      const freq2 = target.peak.freqBin;
+      const timeDelta = target.timeDelta;
+      
+      // Quantize time delta for better matching stability
+      const quantizedTimeDelta = Math.round(timeDelta / TIME_QUANTIZATION) * TIME_QUANTIZATION;
+      
+      // Create a more robust hash combining frequencies and time
+      // Use frequency difference and ratio for better uniqueness
+      const freqDiff = Math.abs(freq2 - freq1);
+      const freqRatio = Math.round(Math.max(freq1, freq2) / Math.min(freq1, freq2) * 10);
+      
+      const hashString = `${Math.min(freq1, freq2)}-${Math.max(freq1, freq2)}-${Math.round(quantizedTimeDelta * 100)}-${freqRatio}`;
+      const hash = murmurhash3.x86.hash32(hashString);
       
       fingerprints.push({
         hash,
         offset: Math.round(anchorTime * 1000), // Convert to milliseconds
-        anchors: [anchorPeak.freqBin, targetPeak.freqBin, Math.round(timeDelta * 10)]
+        anchorFreq: freq1,
+        targetFreq: freq2,
+        timeDelta: quantizedTimeDelta,
+        strength: (anchorPeak.magnitude + target.peak.magnitude) / 2
       });
     });
+  }
+  
+  // Remove duplicate fingerprints (same hash and similar offset)
+  const uniqueFingerprints = [];
+  const seenHashes = new Map();
+  
+  fingerprints.forEach(fp => {
+    const key = `${fp.hash}-${Math.floor(fp.offset / 100)}`; // Group by 100ms
+    if (!seenHashes.has(key) || seenHashes.get(key).strength < fp.strength) {
+      seenHashes.set(key, fp);
+    }
   });
   
-  return fingerprints;
+  uniqueFingerprints.push(...seenHashes.values());
+  
+  return uniqueFingerprints;
 }
 
 /**
@@ -308,9 +391,8 @@ async function processSample(filePath) {
     // Read PCM data
     const audioData = await readPCMFile(pcmFile);
     
-    // Process the full sample - don't truncate recognition samples
-    // Use smaller HOP_SIZE for sample to capture more detail
-    const spectralPeaks = extractSpectralPeaks(audioData);
+    // For recognition, we want more detail, so use smaller hop size
+    const spectralPeaks = extractSpectralPeaks(audioData, HOP_SIZE_RECOGNITION);
     
     // Generate fingerprints from peaks
     const fingerprints = generateFingerprintsFromPeaks(spectralPeaks);
@@ -328,6 +410,7 @@ async function processSample(filePath) {
   }
 }
 
+
 /**
  * Match sample fingerprints against the database
  * @param {Array} sampleFingerprints - Fingerprints from the audio sample
@@ -335,106 +418,141 @@ async function processSample(filePath) {
  */
 async function matchFingerprints(sampleFingerprints) {
   try {
-    // Extract just the hashes for efficient lookup
-    const sampleHashes = sampleFingerprints.map(fp => fp.hash);
+    // Filter sample fingerprints by strength to focus on the most reliable ones
+    const topFingerprints = sampleFingerprints
+      .sort((a, b) => (b.strength || 0) - (a.strength || 0))
+      .slice(0, Math.min(5000, sampleFingerprints.length)); // Limit to top 5000
     
-    console.log(`Matching ${sampleHashes.length} fingerprints against database`);
+    const sampleHashes = topFingerprints.map(fp => fp.hash);
     
-    // Find all songs with matching fingerprints
-    // This assumes you have a Song model with fingerprints stored
+    console.log(`Matching ${sampleHashes.length} top fingerprints against database`);
+    
+    // Find songs with matching fingerprints
     const matchedSongs = await Song.aggregate([
-      // Match songs that have any fingerprints matching our sample
-      { $match: { 
-        "fingerprints.hash": { $in: sampleHashes } 
-      }},
-      // Unwind the fingerprints array to work with individual fingerprints
+      { $match: { "fingerprints.hash": { $in: sampleHashes } }},
       { $unwind: "$fingerprints" },
-      // Only keep fingerprints that match our sample
-      { $match: { 
-        "fingerprints.hash": { $in: sampleHashes } 
-      }},
-      // Group by song and count matches
+      { $match: { "fingerprints.hash": { $in: sampleHashes } }},
       { $group: {
         _id: "$_id",
         title: { $first: "$title" },
         artist: { $first: "$artist" },
+        duration: { $first: "$duration" },
         matchCount: { $sum: 1 },
         fingerprints: { $push: "$fingerprints" }
       }},
-      // Sort by match count (most matches first)
+      { $match: { matchCount: { $gte: 10 } }}, // Pre-filter: at least 10 matches
       { $sort: { matchCount: -1 } }
     ]);
     
-    console.log(`Found ${matchedSongs.length} songs with any matching fingerprints`);
+    console.log(`Found ${matchedSongs.length} songs with 10+ matching fingerprints`);
     
-    // For very short samples, lower the threshold
-    const MIN_MATCHES = sampleFingerprints.length < 1000 ? 5 : 15;
-    
-    // Calculate time offset histogram for each potential match
     const results = [];
+    const OFFSET_TOLERANCE = 200; // 200ms tolerance for grouping offsets
     
-    // Loop through each potential match
     for (const song of matchedSongs) {
-      // Skip songs with too few matches (under threshold is likely noise)
-      if (song.matchCount < MIN_MATCHES) continue;
+      // Build offset histogram with better precision
+      const offsetCounts = new Map();
+      const matchDetails = [];
       
-      // Create a histogram of time offsets
-      const offsetHistogram = {};
-      const matchedPairs = [];
-      
-      // For each matching hash, find the corresponding sample fingerprint
+      // Match fingerprints and calculate offsets
       for (const songFp of song.fingerprints) {
-        const sampleFp = sampleFingerprints.find(fp => fp.hash === songFp.hash);
+        const sampleFp = topFingerprints.find(fp => fp.hash === songFp.hash);
         if (!sampleFp) continue;
         
-        // Calculate time offset between song and sample
-        // This is the key to alignment - consistent time delta means a match
         const timeOffset = songFp.offset - sampleFp.offset;
         
-        // Add to histogram
-        offsetHistogram[timeOffset] = (offsetHistogram[timeOffset] || 0) + 1;
+        // Group similar offsets together
+        const offsetKey = Math.round(timeOffset / OFFSET_TOLERANCE) * OFFSET_TOLERANCE;
         
-        matchedPairs.push({
+        offsetCounts.set(offsetKey, (offsetCounts.get(offsetKey) || 0) + 1);
+        matchDetails.push({
           songOffset: songFp.offset,
           sampleOffset: sampleFp.offset,
-          delta: timeOffset
+          timeOffset: timeOffset,
+          groupedOffset: offsetKey,
+          hash: songFp.hash
         });
       }
       
-      // Find the most common time offset (the peak in histogram)
+      // Find the best alignment (most common offset)
       let bestOffset = 0;
       let bestCount = 0;
       
-      Object.entries(offsetHistogram).forEach(([offset, count]) => {
+      for (const [offset, count] of offsetCounts.entries()) {
         if (count > bestCount) {
           bestCount = count;
-          bestOffset = parseInt(offset);
+          bestOffset = offset;
         }
-      });
+      }
       
-      // Get the alignment confidence (matched pairs at best offset / total fingerprints in sample)
-      const confidenceScore = bestCount / sampleFingerprints.length;
+      // Calculate more sophisticated confidence metrics
       const alignedMatches = bestCount;
+      const totalSampleFingerprints = topFingerprints.length;
+      const matchRatio = alignedMatches / totalSampleFingerprints;
       
-      // For debugging
-      console.log(`Song: ${song.title}, Total matches: ${song.matchCount}, Aligned matches: ${alignedMatches}, Confidence: ${confidenceScore.toFixed(2)}`);
+      // Calculate temporal consistency (how well-distributed are the matches)
+      const alignedDetails = matchDetails.filter(m => 
+        Math.abs(m.groupedOffset - bestOffset) <= OFFSET_TOLERANCE
+      );
       
-      // Only include if we have enough aligned matches
-      if (alignedMatches >= MIN_MATCHES) {
+      // Check temporal distribution
+      const timeSpread = alignedDetails.length > 1 ? 
+        Math.max(...alignedDetails.map(m => m.sampleOffset)) - 
+        Math.min(...alignedDetails.map(m => m.sampleOffset)) : 0;
+      
+      // Confidence based on multiple factors
+      const baseConfidence = Math.min(matchRatio * 2, 1.0); // Cap at 1.0
+      const temporalBonus = Math.min(timeSpread / 5000, 0.2); // Bonus for temporal spread
+      const alignmentBonus = alignedMatches > 30 ? 0.1 : 0; // Bonus for many aligned matches
+      
+      const finalConfidence = Math.min(baseConfidence + temporalBonus + alignmentBonus, 1.0);
+      
+      console.log(`Song: ${song.title}`);
+      console.log(`  Total matches: ${song.matchCount}, Aligned: ${alignedMatches}`);
+      console.log(`  Match ratio: ${matchRatio.toFixed(3)}, Time spread: ${timeSpread}ms`);
+      console.log(`  Confidence: ${finalConfidence.toFixed(3)}`);
+      
+      // More stringent filtering criteria
+      const MIN_ALIGNED_MATCHES = Math.max(15, totalSampleFingerprints * 0.01); // At least 1% match
+      const MIN_CONFIDENCE = 0.15; // Minimum confidence threshold
+      
+      if (alignedMatches >= MIN_ALIGNED_MATCHES && finalConfidence >= MIN_CONFIDENCE) {
         results.push({
           songId: song._id,
           title: song.title,
           artist: song.artist,
-          confidence: confidenceScore.toFixed(2),
+          confidence: parseFloat(finalConfidence.toFixed(3)),
           alignedMatches,
           totalMatches: song.matchCount,
-          offset: bestOffset, // Time in the original song where the sample starts (ms)
+          matchRatio: parseFloat(matchRatio.toFixed(3)),
+          timeSpread: Math.round(timeSpread),
+          offset: bestOffset,
+          songDuration: song.duration
         });
       }
     }
     
-    console.log(`Found ${results.length} potential matches after alignment filtering`);
+    // Sort by confidence, then by aligned matches
+    results.sort((a, b) => {
+      const confidenceDiff = b.confidence - a.confidence;
+      return confidenceDiff !== 0 ? confidenceDiff : b.alignedMatches - a.alignedMatches;
+    });
+    
+    // Further filter to prevent false positives
+    if (results.length > 1) {
+      const topResult = results[0];
+      const significantResults = results.filter(r => 
+        r.confidence >= topResult.confidence * 0.7 && // Within 70% of top confidence
+        r.alignedMatches >= topResult.alignedMatches * 0.5 // At least 50% of top aligned matches
+      );
+      
+      console.log(`Filtered from ${results.length} to ${significantResults.length} significant results`);
+      return significantResults.slice(0, 3); // Return top 3 at most
+    }
+    
+    console.log(`Final results: ${results.length} matches`);
     return results;
+    
   } catch (error) {
     console.error('Error in matchFingerprints:', error);
     throw error;
@@ -599,6 +717,27 @@ async function recognizeSong(req, res) {
     
     // Process the sample file to extract fingerprints
     const filePath = req.file.path;
+    
+    // Get sample duration for context
+    let sampleDuration = 0;
+    try {
+      const { stdout } = await execPromise(
+        `"${FFMPEG_PATH}" -i "${filePath}" -f null - 2>&1`
+      );
+      
+      const durationMatch = stdout.match(/Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+      if (durationMatch) {
+        const hours = parseInt(durationMatch[1]);
+        const minutes = parseInt(durationMatch[2]);
+        const seconds = parseFloat(durationMatch[3]);
+        sampleDuration = hours * 3600 + minutes * 60 + seconds;
+      }
+    } catch (err) {
+      console.error('Error getting sample duration:', err);
+    }
+    
+    console.log(`Sample duration: ${sampleDuration.toFixed(2)}s`);
+    
     const sampleFingerprints = await processSample(filePath);
     
     console.log(`Extracted ${sampleFingerprints.length} fingerprints from sample for matching`);
@@ -611,14 +750,31 @@ async function recognizeSong(req, res) {
       if (err) console.error(`Error deleting file: ${err}`);
     });
     
-    // Return the results
-    return res.json({
+    // Enhanced response with more details
+    const response = {
       results: matches,
-      matchCount: matches.length
-    });
+      matchCount: matches.length,
+      sampleDuration: Math.round(sampleDuration * 100) / 100,
+      fingerprintCount: sampleFingerprints.length,
+      processingInfo: {
+        message: matches.length === 0 ? 
+          "No confident matches found. This could mean the song is not in the database or the sample quality is too low." :
+          matches.length === 1 ?
+          "Single confident match found." :
+          `${matches.length} potential matches found. Top result is most likely.`
+      }
+    };
+    
+    console.log(`Recognition complete: ${matches.length} matches returned`);
+    
+    return res.json(response);
+    
   } catch (error) {
     console.error('Error in recognizeSong:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ 
+      error: error.message,
+      details: 'Audio recognition failed. Please ensure the audio file is valid and try again.'
+    });
   }
 }
 

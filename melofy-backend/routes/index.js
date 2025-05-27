@@ -44,8 +44,8 @@ const upload = multer({
 // Song Management Routes
 router.post('/songs', upload.single('audio'), songController.addSong);
 router.get('/songs', songController.listSongs);
-// router.get('/songs/:id', songController.getSong);
-// router.delete('/songs/:id', songController.deleteSong);
+router.get('/songs/:id', songController.getSong);
+router.delete('/songs/:id', songController.deleteSong);
 
 // Fingerprint Routes
 router.get('/songs/:id/fingerprints', songController.getFingerprints);
