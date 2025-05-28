@@ -23,7 +23,6 @@ const MIN_TIME_DELTA = 0.05; // Minimum time between anchor and target (50ms)
 const MAX_TIME_DELTA = 2.0;  // Maximum time between anchor and target (2s)
 const PEAK_SORT_SIZE = 10;   // Consider top 10 peaks per frame
 
-// Temporary directory for processing
 const TEMP_DIR = path.join(__dirname, '../temp');
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
