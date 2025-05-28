@@ -1,4 +1,3 @@
-```markdown
 # 🎵 Melofy - A Real-Time Music Recognition System
 
 Melofy is a full-stack web application that enables users to identify music tracks in real-time using advanced audio fingerprinting techniques. Inspired by Shazam, Melofy allows users to upload audio clips, analyze and recognize songs, manage song history, and explore a sleek, responsive interface.
@@ -27,7 +26,6 @@ Melofy is a full-stack web application that enables users to identify music trac
 
 ### Frontend (`/melofy-frontend`)
 ```
-
 public/
 src/
 ├── app/
@@ -42,17 +40,15 @@ src/
 │   ├── media/
 │   ├── music/
 │   ├── sections/
-│   └── ui/
+│   ├── ui/
 │   ├── AudioProcessing.jsx
 │   ├── SongCard.jsx
 │   ├── ProcessingIndicator.jsx
 │   └── SearchBar.jsx
-
 ```
 
 ### Backend (`/melofy-backend`)
 ```
-
 config/
 controllers/
 middlewares/
@@ -62,8 +58,7 @@ temp/
 utils/
 .env
 server.js
-
-````
+```
 
 ---
 
@@ -110,10 +105,9 @@ server.js
 ```bash
 git clone https://github.com/AmanBhatt0910/Melofy.git
 cd melofy
-````
+```
 
 ### 2. Setup Backend
-
 ```bash
 cd melofy-backend
 npm install
@@ -122,9 +116,8 @@ npm run dev
 ```
 
 ### 3. Setup Frontend
-
 ```bash
-cd frontend
+cd melofy-frontend
 npm install
 npm run dev
 ```
@@ -134,7 +127,6 @@ npm run dev
 ## ⚙️ Environment Variables
 
 Create a `.env` file in the backend with the following:
-
 ```
 PORT=5000
 MONGODB_URI=your_mongo_connection_string
@@ -145,13 +137,11 @@ JWT_SECRET=your_jwt_secret
 
 ## 👥 Contributors
 
-* Aman bhatt – [@amanbhatt0910](https://github.com/AmanBhatt0910/Melofy.git)
+* Aman Bhatt – [@AmanBhatt0910](https://github.com/AmanBhatt0910)
 
 ---
 
 ## 📌 Acknowledgements
 
 * Shazam (for inspiration)
-* open-source libraries used in this project (wavesurfer.js, pitchfinder, maath, etc.)
-
-```
+* Open-source libraries used in this project (wavesurfer.js, pitchfinder, maath, etc.)
