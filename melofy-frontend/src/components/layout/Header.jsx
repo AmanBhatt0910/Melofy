@@ -36,7 +36,6 @@ export default function Header() {
     setAuthError('');
 
     if (credentials.id === ADMIN_CREDENTIALS.id && credentials.password === ADMIN_CREDENTIALS.password) {
-      // Store authentication state (you might want to use a more secure method)
       sessionStorage.setItem('isAuthenticated', 'true');
       setIsAuthModalOpen(false);
       setCredentials({ id: '', password: '' });
@@ -49,7 +48,6 @@ export default function Header() {
   const handleManageClick = (e) => {
     e.preventDefault();
     
-    // Check if already authenticated
     const isAuthenticated = sessionStorage.getItem('isAuthenticated');
     if (isAuthenticated === 'true') {
       router.push('/manager');
@@ -145,7 +143,6 @@ export default function Header() {
         </AnimatePresence>
       </header>
 
-      {/* Authentication Modal */}
       <AnimatePresence>
         {isAuthModalOpen && (
           <motion.div
