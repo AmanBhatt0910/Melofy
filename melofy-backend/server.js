@@ -11,7 +11,7 @@ const app = express();
 connectDB();
 
 app.use(cors({
-  origin: 'https://melofy-nu.vercel.app',
+  origin: ['http://localhost:5000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
