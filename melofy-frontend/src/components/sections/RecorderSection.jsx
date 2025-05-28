@@ -121,7 +121,7 @@ const processRecording = async () => {
       formData.append('audio', audioBlob, 'recording.webm');
       
       // Send to API
-      const response = await fetch('http://localhost:5000/api/recognize', {
+      const response = await fetch('https://melofy-backend.vercel.app/api/recognize', {
         method: 'POST',
         body: formData,
       });

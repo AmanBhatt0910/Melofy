@@ -85,7 +85,7 @@ export default function SongManager() {
     setError(null);
     
     try {
-      const response = await fetch('http://localhost:5000/api/songs');
+      const response = await fetch('https://melofy-backend.vercel.app/api/songs');
       
       if (!response.ok) {
         throw new Error(`Failed to load songs: ${response.status}`);
@@ -120,7 +120,7 @@ export default function SongManager() {
       formData.append('artist', newSong.artist.trim());
       formData.append('audio', newSong.audio);
 
-      const response = await fetch('http://localhost:5000/api/songs', {
+      const response = await fetch('https://melofy-backend.vercel.app/api/songs', {
         method: 'POST',
         body: formData,
       });
@@ -157,7 +157,7 @@ export default function SongManager() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/songs/${songId}`, {
+      const response = await fetch(`https://melofy-backend.vercel.app/api/songs/${songId}`, {
         method: 'DELETE',
       });
 
@@ -192,7 +192,7 @@ export default function SongManager() {
   // Get single song details
   const getSongDetails = async (songId) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/songs/${songId}`);
+      const response = await fetch(`https://melofy-backend.vercel.app/api/songs/${songId}`);
       
       if (!response.ok) {
         throw new Error(`Failed to get song details: ${response.status}`);
@@ -219,7 +219,7 @@ export default function SongManager() {
       }
 
       // Create new audio instance
-      const audio = new Audio(`http://localhost:5000/api/songs/${songId}/stream`);
+      const audio = new Audio(`https://melofy-backend.vercel.app/api/songs/${songId}/stream`);
       audio.volume = isMuted ? 0 : volume;
       
       audio.onended = () => {
@@ -708,7 +708,7 @@ export default function SongManager() {
                   whileTap={{ scale: 0.95 }}
                   onClick={() => {
                     window.open(
-                      `http://localhost:5000/api/songs/${selectedSong.id}/download`,
+                      `https://melofy-backend.vercel.app/api/songs/${selectedSong.id}/download`,
                       '_blank'
                     );
                   }}

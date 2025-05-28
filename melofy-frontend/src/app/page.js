@@ -72,7 +72,7 @@ export default function Home() {
             variants={itemVariants}
             className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto font-light"
           >
-            Identify any song in milliseconds using our advanced audio fingerprinting technology. 
+            Identify any song in seconds using our advanced audio fingerprinting technology. 
             <span className="text-gradient bg-gradient-to-r from-primary-300 to-secondary-300 font-medium">
               {" "}Just hum, whistle, or play it!
             </span>
