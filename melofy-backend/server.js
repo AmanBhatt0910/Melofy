@@ -8,15 +8,23 @@ const bodyParser = require('body-parser');
 const connectDB = require('./config/db');
 
 const app = express();
-
 connectDB();
 
-app.use(cors());
+const allowedOrigins = [
+  'https://melofy-nu.vercel.app',
+  'http://localhost:3000'
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
-  res.send('Sazam App API is running');
+  res.send('Melofy App API is running');
 });
 
 app.use('/api', require('./routes'));
