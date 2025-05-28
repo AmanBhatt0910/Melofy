@@ -10,14 +10,10 @@ const connectDB = require('./config/db');
 const app = express();
 connectDB();
 
-const allowedOrigins = [
-  'https://melofy-nu.vercel.app',
-  'http://localhost:3000'
-];
-
 app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
+  origin: 'https://melofy-nu.vercel.app',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
 }));
 
 app.use(bodyParser.json());
