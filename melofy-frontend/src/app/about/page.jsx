@@ -72,44 +72,13 @@ export default function AboutPage() {
   
   const teamMembers = [
     {
-      name: "Sophia Chen",
+      name: "Aman Bhatt",
       role: "Founder & CEO",
-      bio: "Ph.D. in Signal Processing with 10+ years experience in audio recognition technologies",
+      bio: "Web Developer",
       image: "/api/placeholder/300/300",
       socials: [
         { icon: <RiTwitterFill />, url: "#" },
         { icon: <RiLinkedinFill />, url: "#" },
-        { icon: <RiGithubFill />, url: "#" }
-      ]
-    },
-    {
-      name: "Marcus Wong",
-      role: "CTO",
-      bio: "Former lead developer at Spotify with expertise in audio algorithms and ML",
-      image: "/api/placeholder/300/300",
-      socials: [
-        { icon: <RiTwitterFill />, url: "#" },
-        { icon: <RiLinkedinFill />, url: "#" },
-        { icon: <RiGithubFill />, url: "#" }
-      ]
-    },
-    {
-      name: "Alexis Rodriguez",
-      role: "Head of Product",
-      bio: "Music producer turned product designer with a passion for seamless UX",
-      image: "/api/placeholder/300/300",
-      socials: [
-        { icon: <RiTwitterFill />, url: "#" },
-        { icon: <RiLinkedinFill />, url: "#" }
-      ]
-    },
-    {
-      name: "Kai Tanaka",
-      role: "Lead Engineer",
-      bio: "Audio processing specialist with background in DSP and real-time systems",
-      image: "/api/placeholder/300/300",
-      socials: [
-        { icon: <RiTwitterFill />, url: "#" },
         { icon: <RiGithubFill />, url: "#" }
       ]
     }
@@ -338,19 +307,19 @@ export default function AboutPage() {
               <div className="grid md:grid-cols-3 gap-8 text-center">
                 <div className="space-y-2">
                   <div className="text-4xl font-bold bg-gradient-to-r from-[rgb(var(--color-primary-400))] to-[rgb(var(--color-secondary-500))] bg-clip-text text-transparent">
-                    99.2%
+                    80%
                   </div>
                   <div className="text-muted-foreground">Recognition Accuracy</div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-4xl font-bold bg-gradient-to-r from-[rgb(var(--color-secondary-400))] to-[rgb(var(--color-primary-500))] bg-clip-text text-transparent">
-                    850ms
+                    2sec
                   </div>
                   <div className="text-muted-foreground">Average Response Time</div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-4xl font-bold bg-gradient-to-r from-[rgb(var(--color-primary-400))] to-[rgb(var(--color-secondary-500))] bg-clip-text text-transparent">
-                    10M+
+                    10+
                   </div>
                   <div className="text-muted-foreground">Songs Cataloged</div>
                 </div>
