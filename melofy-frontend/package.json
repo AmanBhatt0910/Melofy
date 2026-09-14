@@ -16,7 +16,7 @@
     "framer-motion": "^12.11.4",
     "lucide-react": "^0.511.0",
     "maath": "^0.10.8",
-    "next": "^16.1.6",
+    "next": "^16.3.5",
     "postcss": "^8.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
