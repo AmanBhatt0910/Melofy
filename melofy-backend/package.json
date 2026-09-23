@@ -17,7 +17,7 @@
     "express": "^5.1.0",
     "fourier-transform": "^1.1.2",
     "mongoose": "^8.15.0",
-    "multer": "^2.0.0",
+    "multer": "^2.4.0",
     "murmurhash3js": "^3.0.1",
     "pitchfinder": "^2.3.0",
     "web-audio-api": "^0.2.2"
